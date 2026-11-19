@@ -1,0 +1,49 @@
+name: Contract
+
+# The published package, as a user installs it from PyPI, against the engines it runs on:
+# the oldest supported CPython, the newest stable ones and the sqlite each one bundles.
+# The tests are those of the release tag, run from a copy outside the source tree so the
+# import can only resolve to the installed wheel.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  published:
+    runs-on: ${{ matrix.python-version == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Newest version on PyPI
+        id: pypi
+        run: |
+          v=$(curl -fsSL https://pypi.org/pypi/ledgerlink/json | python -c "import json,sys; print(json.load(sys.stdin)['info']['version'])")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "PyPI carries ledgerlink $v"
+          git rev-parse --verify "v$v^{commit}"
+      - name: The tests of that release, outside the source tree
+        run: |
+          mkdir -p /tmp/contract
+          git archive "v${{ steps.pypi.outputs.version }}" tests examples README.md | tar -x -C /tmp/contract
+      - name: Install the published wheel in a fresh environment
+        run: |
+          python -m venv /tmp/fresh
+          /tmp/fresh/bin/python -m pip install --no-cache-dir "ledgerlink==${{ steps.pypi.outputs.version }}" "pytest>=7"
+          /tmp/fresh/bin/python -c "import ledgerlink, sqlite3, sys; print(ledgerlink.__file__, ledgerlink.__version__, 'sqlite', sqlite3.sqlite_version, sys.version)"
+          /tmp/fresh/bin/python -c "import ledgerlink, sys; sys.exit(ledgerlink.__version__ != '${{ steps.pypi.outputs.version }}')"
+      - name: Contract tests
+        working-directory: /tmp/contract
+        run: /tmp/fresh/bin/python -m pytest -q -p no:cacheprovider
