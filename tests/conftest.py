@@ -8,9 +8,12 @@ from ledgerlink.cache import Cache
 def _isolate(monkeypatch, tmp_path):
     monkeypatch.setenv("LEDGERLINK_CACHE", str(tmp_path / "default-cache" / "l.sqlite"))
     monkeypatch.delenv("LEDGERLINK_ROOT", raising=False)
+    monkeypatch.delenv("LEDGERLINK_ACTOR", raising=False)
     saved = dict(reader._config)
     saved_stores = dict(refs._stores)
-    reader._config.update({"adapters": {}, "root": None})
+    reader._config.update(
+        {"adapters": {}, "root": None, "actor_env": None, "clean": None, "validate": None}
+    )
     refs.unregister()
     yield
     reader._config.update(saved)

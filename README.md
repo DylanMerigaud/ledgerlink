@@ -73,9 +73,30 @@ directory. The cache file is `LEDGERLINK_CACHE`, else
 `$XDG_CACHE_HOME/ledgerlink/ledgerlink.sqlite` (fallback `~/.cache/ledgerlink/ledgerlink.sqlite`).
 It is a cache: safe to delete.
 
+## Writing
+
+```python
+import tempfile
+import ledgerlink
+
+root = tempfile.mkdtemp()
+row = ledgerlink.append("deploys", {"svc": "api", "id": 9}, actor="ci", refs=["ledger:deploys:8"], root=root)
+print(row["actor"], row["refs"])  # ci ['ledger:deploys:8']
+```
+
+`append(name, row, *, actor=None, refs=None, root=None, path=None, ensure_ascii=False)` adds one
+line to `<root>/<name>.jsonl` (or the adapter's `path`) and returns the dict written. Your fields
+are kept as given; `at` (UTC) and `actor` are added only when the row has none. The actor is the
+`actor` argument, else the env var `LEDGERLINK_ACTOR` (rename it with `configure(actor_env=...)`),
+else `script:<name of the running script>`. `refs` are merged with the row's own, deduplicated
+and checked (through `refs.parse` for a declared store, else as `<store>:<key>`); a bad one raises
+`LedgerRefused` and nothing is written. `configure(clean=fn)` applies `fn` to every string of the
+row, `configure(validate=fn)` checks the final row. Each call is a single `os.write` on an
+append-mode descriptor, so concurrent writers never interleave a line.
+
 ## What it does not do
 
-- No writer: it never appends to or changes a ledger.
+- No rewrite: it only appends, it never edits or deletes a row.
 - No schema enforcement: a row that does not fit the adapter gets `None` fields, and `raw` is
   always the row as written.
 - No network and no daemon: it reads files when you call it.

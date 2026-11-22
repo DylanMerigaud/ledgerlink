@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- `append(name, row, *, actor, refs, root, path, ensure_ascii)`: the writer. One JSON line per call, written with a single `os.write` on an `O_APPEND` descriptor. Adds `at` and `actor` only when the row has none, merges `refs`, keeps every caller field in order.
+- `LedgerRefused` (a `ValueError`): raised, with nothing written, on a bad ref or when `validate` refuses.
+- `configure(actor_env, clean, validate)`: the env var the actor is read from (default `LEDGERLINK_ACTOR`), a function applied to every string of a written row, and a final check on it. Backward compatible.
+
 ## 0.1.0
 
 First release.

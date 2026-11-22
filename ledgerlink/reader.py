@@ -32,7 +32,7 @@ import os
 import sys
 from collections.abc import Iterator
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 if TYPE_CHECKING:
     from .cache import Cache
@@ -46,15 +46,38 @@ ROOT_ENV = "LEDGERLINK_ROOT"
 # Bump whenever envelope() or its helpers change what a row becomes: the cache re-reads from 0.
 ENVELOPE_VERSION = 2
 
-_config: Dict[str, Any] = {"adapters": {}, "root": None}
+ACTOR_ENV = "LEDGERLINK_ACTOR"
+
+_config: Dict[str, Any] = {
+    "adapters": {},
+    "root": None,
+    "actor_env": None,
+    "clean": None,
+    "validate": None,
+}
 
 
-def configure(adapters: Optional[Dict[str, Adapter]] = None, root: Optional[str] = None) -> None:
-    """Install the default adapter table and ledger directory."""
+def configure(
+    adapters: Optional[Dict[str, Adapter]] = None,
+    root: Optional[str] = None,
+    actor_env: Optional[str] = None,
+    clean: Optional[Callable[[str], str]] = None,
+    validate: Optional[Callable[[Dict[str, Any]], Any]] = None,
+) -> None:
+    """Install the default adapter table and ledger directory, and the writer's settings:
+    `actor_env` (the env var `append` reads the actor from, default LEDGERLINK_ACTOR), `clean`
+    (applied to every str of a written row) and `validate` (called on the final row, may raise
+    LedgerRefused). A setting left None is not changed."""
     if adapters is not None:
         _config["adapters"] = adapters
     if root is not None:
         _config["root"] = root
+    if actor_env is not None:
+        _config["actor_env"] = actor_env
+    if clean is not None:
+        _config["clean"] = clean
+    if validate is not None:
+        _config["validate"] = validate
 
 
 def _root(root: Optional[str]) -> str:
