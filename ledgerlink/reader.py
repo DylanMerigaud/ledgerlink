@@ -57,26 +57,30 @@ _config: Dict[str, Any] = {
 }
 
 
+_UNSET: Any = object()
+
+
 def configure(
     adapters: Optional[Dict[str, Adapter]] = None,
     root: Optional[str] = None,
-    actor_env: Optional[str] = None,
-    clean: Optional[Callable[[str], str]] = None,
-    validate: Optional[Callable[[Dict[str, Any]], Any]] = None,
+    actor_env: Optional[str] = _UNSET,
+    clean: Optional[Callable[[str], str]] = _UNSET,
+    validate: Optional[Callable[[Dict[str, Any]], Any]] = _UNSET,
 ) -> None:
     """Install the default adapter table and ledger directory, and the writer's settings:
     `actor_env` (the env var `append` reads the actor from, default LEDGERLINK_ACTOR), `clean`
     (applied to every str of a written row) and `validate` (called on the final row, may raise
-    LedgerRefused). A setting left None is not changed."""
+    LedgerRefused). `adapters` and `root` left None are not changed; `actor_env`, `clean` and
+    `validate` left out are not changed, and passed as None are cleared."""
     if adapters is not None:
         _config["adapters"] = adapters
     if root is not None:
         _config["root"] = root
-    if actor_env is not None:
+    if actor_env is not _UNSET:
         _config["actor_env"] = actor_env
-    if clean is not None:
+    if clean is not _UNSET:
         _config["clean"] = clean
-    if validate is not None:
+    if validate is not _UNSET:
         _config["validate"] = validate
 
 
@@ -87,6 +91,11 @@ def _root(root: Optional[str]) -> str:
 def _table(adapters: Optional[Dict[str, Adapter]]) -> Dict[str, Adapter]:
     table: Dict[str, Adapter] = _config["adapters"] if adapters is None else adapters
     return table
+
+
+def adapter_of(name: str, adapters: Optional[Dict[str, Adapter]] = None) -> Adapter:
+    """The adapter of ledger `name` in the given table, else the installed one, else the default."""
+    return _table(adapters).get(name, DEFAULT_ADAPTER)
 
 
 def ledger_path(name: str, adapter: Adapter, root: Optional[str] = None) -> str:
@@ -258,7 +267,7 @@ def refresh(
     cache: Optional[Cache] = None,
 ) -> Dict[str, Any]:
     """Tail the ledger into the cache; returns the pass stats ({parsed, bytes, reset})."""
-    ad = _table(adapters).get(name, DEFAULT_ADAPTER)
+    ad = adapter_of(name, adapters)
     c = _cache(cache)
     try:
         return c.refresh(name, ledger_path(name, ad, root), ad)
@@ -289,7 +298,7 @@ def read(
     envelope fields (indexed in the cache): what a graph walk needs to find what points at a
     record. `since`/`until` compare `at` as text; a time with a zone is normalized to UTC, a
     zone-less one is kept as written."""
-    ad = _table(adapters).get(name, DEFAULT_ADAPTER)
+    ad = adapter_of(name, adapters)
     path = ledger_path(name, ad, root)
     if cache is False:
         count = 0
@@ -327,7 +336,7 @@ def lookup(
     cache: Optional[Cache] = None,
 ) -> Optional[Envelope]:
     """The latest envelope of `name` whose key (by="key") or id (by="id") is `value`, or None."""
-    ad = _table(adapters).get(name, DEFAULT_ADAPTER)
+    ad = adapter_of(name, adapters)
     c = _cache(cache)
     try:
         c.refresh(name, ledger_path(name, ad, root), ad)

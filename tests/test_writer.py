@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import threading
 
@@ -43,6 +44,69 @@ def test_actor_precedence(ledgers, monkeypatch):
     assert ledgerlink.append("l", {"actor": "row"}, actor="kw", root=r)["actor"] == "row"
 
 
+def test_row_actor_beats_env(ledgers, monkeypatch):
+    monkeypatch.setenv("LEDGERLINK_ACTOR", "env")
+    assert ledgerlink.append("l", {"actor": "row"}, root=str(ledgers))["actor"] == "row"
+
+
+def test_validate_other_error_propagates(ledgers):
+    def boom(row):
+        raise KeyError("nope")
+
+    ledgerlink.configure(validate=boom)
+    with pytest.raises(KeyError):
+        ledgerlink.append("l", {}, root=str(ledgers))
+    assert not (ledgers / "l.jsonl").exists()
+
+
+def test_short_write_raises(ledgers, monkeypatch):
+    monkeypatch.setattr(os, "write", lambda fd, data: len(data) - 1)
+    with pytest.raises(OSError, match="short write"):
+        ledgerlink.append("l", {"k": 1}, root=str(ledgers))
+
+
+def test_clean_key_collision_refused(ledgers):
+    ledgerlink.configure(clean=str.strip)
+    with pytest.raises(ledgerlink.LedgerRefused, match="collide"):
+        ledgerlink.append("l", {"a": 1, " a": 2}, root=str(ledgers))
+    assert not (ledgers / "l.jsonl").exists()
+
+
+def test_clean_treats_tuples_like_lists(ledgers):
+    ledgerlink.configure(clean=str.upper)
+    assert ledgerlink.append("l", {"t": ("a", "b")}, root=str(ledgers))["T"] == ["A", "B"]
+
+
+def test_clean_runs_before_merge_and_check(ledgers):
+    ledgerlink.configure(clean=lambda s: s.replace("!", ""))
+    out = ledgerlink.append("l", {"refs": ["a!:1"]}, actor="me", refs=["b:2"], root=str(ledgers))
+    assert out["refs"] == ["a:1", "b:2"] and out["actor"] == "me"
+
+
+def test_own_refs_untouched_without_kwarg(ledgers):
+    out = ledgerlink.append("l", {"refs": "a:1"}, root=str(ledgers))
+    assert out["refs"] == "a:1"
+    out = ledgerlink.append("l", {"refs": ["a:1", "a:1"]}, root=str(ledgers))
+    assert out["refs"] == ["a:1", "a:1"]
+    with pytest.raises(ledgerlink.LedgerRefused):
+        ledgerlink.append("l", {"refs": ["bad"]}, root=str(ledgers))
+
+
+def test_configure_none_clears(ledgers):
+    ledgerlink.configure(clean=str.upper, validate=lambda r: None, actor_env="X")
+    ledgerlink.configure(root=str(ledgers))
+    assert ledgerlink.reader._config["clean"] is str.upper
+    ledgerlink.configure(clean=None, validate=None, actor_env=None)
+    c = ledgerlink.reader._config
+    assert c["clean"] is None and c["validate"] is None and c["actor_env"] is None
+
+
+def test_nan_refused(ledgers):
+    with pytest.raises(ledgerlink.LedgerRefused):
+        ledgerlink.append("l", {"x": float("nan")}, root=str(ledgers))
+    assert not (ledgers / "l.jsonl").exists()
+
+
 def test_refs_merge_and_dedupe(ledgers):
     out = ledgerlink.append(
         "l", {"refs": ["a:1", "b:2"]}, refs=["b:2", "c:3", "a:1"], root=str(ledgers)
@@ -72,7 +136,7 @@ def test_clean_is_recursive_on_keys_and_values(ledgers):
     out = ledgerlink.append(
         "l", {"bad": "bad1", "n": {"bad2": ["bad3", 4]}}, actor="bad", root=str(ledgers)
     )
-    assert out["ok"] == "ok1" and out["n"] == {"ok2": ["ok3", 4]} and out["actor"] == "ok"
+    assert out["ok"] == "ok1" and out["n"] == {"ok2": ["ok3", 4]} and out["actor"] == "bad"
     assert lines(ledgers / "l.jsonl")[0] == out
 
 

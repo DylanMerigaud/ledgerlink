@@ -43,23 +43,25 @@ def _check_ref(ref: Any) -> str:
     return ref
 
 
-def _merge_refs(row_refs: Any, extra: Optional[Sequence[str]]) -> List[str]:
+def _own_refs(row_refs: Any) -> List[Any]:
     if row_refs is None:
-        first: List[Any] = []
-    elif isinstance(row_refs, str):
-        first = [row_refs]
-    elif isinstance(row_refs, (list, tuple)):
-        first = list(row_refs)
-    else:
-        raise LedgerRefused(f"refs must be a list of refs: {row_refs!r}")
-    if isinstance(extra, str):
-        extra = [extra]
-    merged: List[str] = []
-    for ref in first + list(extra or ()):
+        return []
+    if isinstance(row_refs, str):
+        return [row_refs]
+    if isinstance(row_refs, (list, tuple)):
+        return list(row_refs)
+    raise LedgerRefused(f"refs must be a list of refs: {row_refs!r}")
+
+
+def _apply_refs(out: Dict[str, Any], extra: Optional[Sequence[str]]) -> None:
+    """Check every ref of the row and of `extra`. The row's own `refs` value is left as it is
+    unless `extra` adds refs: then the merged, deduplicated list is written."""
+    own = _own_refs(out.get("refs"))
+    added = [extra] if isinstance(extra, str) else list(extra or ())
+    for ref in own + added:
         _check_ref(ref)
-        if ref not in merged:
-            merged.append(ref)
-    return merged
+    if added:
+        out["refs"] = list(dict.fromkeys(own + added))
 
 
 def _actor(actor: Optional[str]) -> str:
@@ -76,8 +78,14 @@ def _clean(value: Any, fn: Any) -> Any:
     if isinstance(value, str):
         return fn(value)
     if isinstance(value, dict):
-        return {_clean(k, fn): _clean(v, fn) for k, v in value.items()}
-    if isinstance(value, list):
+        out: Dict[Any, Any] = {}
+        for k, v in value.items():
+            ck = _clean(k, fn)
+            if ck in out:
+                raise LedgerRefused(f"clean makes two keys collide: {k!r} and {ck!r}")
+            out[ck] = _clean(v, fn)
+        return out
+    if isinstance(value, (list, tuple)):
         return [_clean(v, fn) for v in value]
     return value
 
@@ -94,29 +102,34 @@ def append(
 ) -> Dict[str, Any]:
     """Append `row` to ledger `name` and return the dict written."""
     out: Dict[str, Any] = dict(row)
+    clean = reader._config["clean"]
+    if clean is not None:
+        out = _clean(out, clean)
     if "at" not in out:
         out["at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     if "actor" not in out:
         out["actor"] = _actor(actor)
-    merged = _merge_refs(out.get("refs"), refs)
-    if merged:
-        out["refs"] = merged
-    clean = reader._config["clean"]
-    if clean is not None:
-        out = _clean(out, clean)
+    _apply_refs(out, refs)
     validate = reader._config["validate"]
     if validate is not None:
         validate(out)
     if path is None:
-        adapter = reader._config["adapters"].get(name, reader.DEFAULT_ADAPTER)
-        path = reader.ledger_path(name, adapter, root)
-    data = (json.dumps(out, ensure_ascii=ensure_ascii, default=str) + "\n").encode("utf-8")
-    parent = os.path.dirname(path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        path = reader.ledger_path(name, reader.adapter_of(name), root)
     try:
-        os.write(fd, data)
+        text = json.dumps(out, ensure_ascii=ensure_ascii, default=str, allow_nan=False)
+    except ValueError as exc:
+        raise LedgerRefused(f"row is not valid JSON: {exc}") from exc
+    data = (text + "\n").encode("utf-8")
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
+    try:
+        fd = os.open(path, flags, 0o644)
+    except FileNotFoundError:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fd = os.open(path, flags, 0o644)
+    try:
+        n = os.write(fd, data)
     finally:
         os.close(fd)
+    if n != len(data):
+        raise OSError(f"short write {n}/{len(data)} to {path}")
     return out

@@ -86,7 +86,7 @@ print(row["actor"], row["refs"])  # ci ['ledger:deploys:8']
 
 `append(name, row, *, actor=None, refs=None, root=None, path=None, ensure_ascii=False)` adds one
 line to `<root>/<name>.jsonl` (or the adapter's `path`) and returns the dict written. Your fields
-are kept as given; `at` (UTC) and `actor` are added only when the row has none. The actor is the
+are kept as given (apart from `clean`, below); `at` (UTC) and `actor` are added only when the row has none. The actor is the
 `actor` argument, else the env var `LEDGERLINK_ACTOR` (rename it with `configure(actor_env=...)`),
 else `script:<name of the running script>`. `refs` are merged with the row's own, deduplicated
 and checked (through `refs.parse` for a declared store, else as `<store>:<key>`); a bad one raises
