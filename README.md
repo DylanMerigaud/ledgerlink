@@ -80,7 +80,9 @@ import tempfile
 import ledgerlink
 
 root = tempfile.mkdtemp()
-row = ledgerlink.append("deploys", {"svc": "api", "id": 9}, actor="ci", refs=["ledger:deploys:8"], root=root)
+row = ledgerlink.append(
+    "deploys", {"svc": "api", "id": 9}, actor="ci", refs=["ledger:deploys:8"], root=root
+)
 print(row["actor"], row["refs"])  # ci ['ledger:deploys:8']
 ```
 

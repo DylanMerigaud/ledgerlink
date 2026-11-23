@@ -35,7 +35,7 @@ Changelog = "https://github.com/DylanMerigaud/ledgerlink/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
-dev = ["pytest>=7", "ruff", "mypy", "build"]
+dev = ["pytest>=7", "ruff>=0.17", "mypy", "build"]
 
 [tool.hatch.version]
 path = "ledgerlink/__init__.py"
